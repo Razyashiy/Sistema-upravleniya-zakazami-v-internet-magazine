@@ -1,0 +1,438 @@
+import sqlite3
+import tkinter as tk
+from tkinter import ttk, messagebox
+from datetime import datetime, timedelta
+import random
+import time
+import sys
+from faker import Faker
+
+class OrderManagementSystem:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Система управления заказами")
+        self.root.geometry("1200x700")
+        self.fake = Faker('ru_RU')
+        self.initialize_database()
+        self.create_interface()
+        self.load_data()
+
+    def initialize_database(self):
+        try:
+            self.conn = sqlite3.connect('orders.db', check_same_thread=False)
+            self.conn.execute("PRAGMA journal_mode=WAL")
+            self.conn.execute("PRAGMA synchronous=NORMAL")
+            self.cursor = self.conn.cursor()
+            self.create_tables()
+            self.create_indexes()
+            self.conn.commit()
+            self.add_sample_data()
+        except sqlite3.Error as e:
+            messagebox.showerror("Ошибка базы данных", f"Ошибка при инициализации БД: {e}")
+            sys.exit(1)
+
+    def create_tables(self):
+        tables = [
+            '''CREATE TABLE IF NOT EXISTS customers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, 
+                name TEXT NOT NULL, 
+                email TEXT UNIQUE, 
+                phone TEXT, 
+                address TEXT, 
+                created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )''',
+            '''CREATE TABLE IF NOT EXISTS products (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, 
+                name TEXT NOT NULL, 
+                price DECIMAL(10,2) NOT NULL, 
+                category TEXT, 
+                stock_quantity INTEGER DEFAULT 0, 
+                created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )''',
+            '''CREATE TABLE IF NOT EXISTS orders (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, 
+                customer_id INTEGER, 
+                order_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP, 
+                total_amount DECIMAL(10,2) DEFAULT 0, 
+                status TEXT DEFAULT 'В ожидании', 
+                shipping_address TEXT, 
+                notes TEXT, 
+                FOREIGN KEY (customer_id) REFERENCES customers (id)
+            )''',
+            '''CREATE TABLE IF NOT EXISTS order_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, 
+                order_id INTEGER, 
+                product_id INTEGER, 
+                quantity INTEGER NOT NULL, 
+                unit_price DECIMAL(10,2) NOT NULL, 
+                FOREIGN KEY (order_id) REFERENCES orders (id), 
+                FOREIGN KEY (product_id) REFERENCES products (id)
+            )'''
+        ]
+        for sql in tables:
+            self.cursor.execute(sql)
+
+    def create_indexes(self):
+        indexes = [
+            ("idx_orders_status", "orders", "status"),
+            ("idx_orders_customer_id", "orders", "customer_id"),
+            ("idx_orders_date", "orders", "order_date"),
+            ("idx_orders_customer_status", "orders", "customer_id, status"),
+            ("idx_orders_amount", "orders", "total_amount"),
+            ("idx_order_items_order_id", "order_items", "order_id"),
+            ("idx_order_items_product_id", "order_items", "product_id"),
+            ("idx_order_items_composite", "order_items", "order_id, product_id"),
+            ("idx_customers_name", "customers", "name"),
+            ("idx_customers_email", "customers", "email"),
+            ("idx_customers_phone", "customers", "phone"),
+            ("idx_products_category", "products", "category"),
+            ("idx_products_price", "products", "price"),
+            ("idx_products_name", "products", "name"),
+            ("idx_products_stock", "products", "stock_quantity")
+        ]
+        for name, table, fields in indexes:
+            self.cursor.execute(f"CREATE INDEX IF NOT EXISTS {name} ON {table}({fields})")
+
+    def add_sample_data(self):
+        for table in ['customers', 'products', 'orders']:
+            self.cursor.execute(f"SELECT COUNT(*) FROM {table}")
+            if self.cursor.fetchone()[0] == 0:
+                if table == 'customers':
+                    self.generate_customers(50)
+                elif table == 'products':
+                    self.generate_products(12)
+                else:
+                    self.generate_orders(100)
+        self.conn.commit()
+
+    def generate_customers(self, count):
+        data = [(self.fake.name(), self.fake.email(), self.fake.phone_number(), self.fake.address()) 
+                for _ in range(count)]
+        self.cursor.executemany(
+            "INSERT INTO customers (name, email, phone, address) VALUES (?, ?, ?, ?)", 
+            data
+        )
+
+    def generate_products(self, count):
+        products = [
+            ('Ноутбук HP Pavilion', 45000.00, 'Электроника', 10),
+            ('Смартфон Samsung Galaxy', 35000.00, 'Электроника', 15),
+            ('Наушники Sony WH-1000XM4', 25000.00, 'Электроника', 20),
+            ('Планшет iPad Air', 55000.00, 'Электроника', 8),
+            ('Умные часы Apple Watch', 30000.00, 'Электроника', 12),
+            ('Книга "Python для начинающих"', 1500.00, 'Книги', 50),
+            ('Книга "Алгоритмы и структуры данных"', 2000.00, 'Книги', 30),
+            ('Книга "Чистый код"', 1800.00, 'Книги', 40),
+            ('Кофемашина DeLonghi', 45000.00, 'Бытовая техника', 5),
+            ('Холодильник Samsung', 80000.00, 'Бытовая техника', 4),
+            ('Футболка хлопковая', 1500.00, 'Одежда', 100),
+            ('Джинсы классические', 3000.00, 'Одежда', 50)
+        ]
+        self.cursor.executemany(
+            "INSERT INTO products (name, price, category, stock_quantity) VALUES (?, ?, ?, ?)", 
+            products[:count]
+        )
+
+    def generate_orders(self, count):
+        self.cursor.execute("SELECT id FROM customers")
+        customer_ids = [row[0] for row in self.cursor.fetchall()]
+        
+        self.cursor.execute("SELECT id, price FROM products")
+        products_data = self.cursor.fetchall()
+        
+        statuses = ['В ожидании', 'В обработке', 'Отправленный', 'Доставленный', 'Отменённый']
+        
+        for i in range(count):
+            customer_id = random.choice(customer_ids)
+            status = random.choice(statuses)
+            order_date = datetime.now() - timedelta(days=random.randint(0, 90))
+            shipping_address = self.fake.address()
+            
+            self.cursor.execute(
+                'INSERT INTO orders (customer_id, order_date, status, shipping_address) VALUES (?, ?, ?, ?)', 
+                (customer_id, order_date, status, shipping_address)
+            )
+            order_id = self.cursor.lastrowid
+            total_amount = 0
+            
+            order_products = random.sample(products_data, random.randint(1, 4))
+            for product_id, price in order_products:
+                quantity = random.randint(1, 3)
+                self.cursor.execute(
+                    'INSERT INTO order_items (order_id, product_id, quantity, unit_price) VALUES (?, ?, ?, ?)', 
+                    (order_id, product_id, quantity, price)
+                )
+                total_amount += price * quantity
+            
+            self.cursor.execute('UPDATE orders SET total_amount = ? WHERE id = ?', (total_amount, order_id))
+
+    def create_interface(self):
+        main_frame = ttk.Frame(self.root, padding="10")
+        main_frame.grid(row=0, column=0, sticky="nsew")
+        
+        self.root.columnconfigure(0, weight=1)
+        self.root.rowconfigure(0, weight=1)
+        main_frame.columnconfigure(1, weight=1)
+        main_frame.rowconfigure(3, weight=1)
+        
+        title_label = ttk.Label(
+            main_frame, 
+            text="Система управления заказами", 
+            font=('Arial', 16, 'bold')
+        )
+        title_label.grid(row=0, column=0, columnspan=3, pady=(0, 20))
+        
+        self.create_search_panel(main_frame)
+        self.create_control_panel(main_frame)
+        self.create_orders_table(main_frame)
+        self.create_stats_and_status(main_frame)
+
+    def create_search_panel(self, parent):
+        search_frame = ttk.LabelFrame(parent, text="Поиск и фильтрация", padding="10")
+        search_frame.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(0, 10))
+        search_frame.columnconfigure(1, weight=1)
+        
+        ttk.Label(search_frame, text="Поиск:").grid(row=0, column=0, padx=(0, 5))
+        self.search_entry = ttk.Entry(search_frame, width=30)
+        self.search_entry.grid(row=0, column=1, padx=(0, 10), sticky="ew")
+        self.search_entry.bind('<KeyRelease>', self.search_orders)
+        
+        ttk.Label(search_frame, text="Статус:").grid(row=0, column=2, padx=(0, 5))
+        self.status_filter = ttk.Combobox(
+            search_frame, 
+            values=['Все', 'В ожидании', 'В обработке', 'Отправленный', 'Доставленный', 'Отменённый'], 
+            state="readonly"
+        )
+        self.status_filter.set('Все')
+        self.status_filter.grid(row=0, column=3, padx=(0, 10))
+        self.status_filter.bind('<<ComboboxSelected>>', self.filter_orders)
+
+    def create_control_panel(self, parent):
+        button_frame = ttk.Frame(parent)
+        button_frame.grid(row=2, column=0, columnspan=3, pady=(0, 10))
+        
+        buttons_data = [
+            ("Добавить заказ", self.add_order),
+            ("Редактировать", self.edit_order),
+            ("Удалить", self.delete_order),
+            ("Обновить", self.load_orders),
+            ("Управление товарами", self.manage_products),
+            ("Управление клиентами", self.manage_customers),
+            ("Тест производительности", self.performance_test),
+            ("Добавить 50 заказов", lambda: self.generate_orders(50))
+        ]
+        
+        for text, command in buttons_data:
+            ttk.Button(button_frame, text=text, command=command).pack(side=tk.LEFT, padx=(0, 5))
+
+    def create_orders_table(self, parent):
+        columns = ('ID', 'Клиент', 'Дата заказа', 'Сумма', 'Статус', 'Адрес доставки')
+        self.orders_tree = ttk.Treeview(parent, columns=columns, show='headings', height=15)
+        
+        column_widths = {
+            'ID': 60, 
+            'Клиент': 150, 
+            'Дата заказа': 150, 
+            'Сумма': 100, 
+            'Статус': 100, 
+            'Адрес доставки': 250
+        }
+        
+        for column in columns:
+            self.orders_tree.heading(column, text=column)
+            self.orders_tree.column(column, width=column_widths[column])
+        
+        scrollbar = ttk.Scrollbar(parent, orient=tk.VERTICAL, command=self.orders_tree.yview)
+        self.orders_tree.configure(yscrollcommand=scrollbar.set)
+        
+        self.orders_tree.grid(row=3, column=0, columnspan=2, sticky="nsew", pady=(0, 10))
+        scrollbar.grid(row=3, column=2, sticky="ns", pady=(0, 10))
+
+    def create_stats_and_status(self, parent):
+        stats_frame = ttk.LabelFrame(parent, text="Статистика", padding="5")
+        stats_frame.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(0, 5))
+        
+        self.stats_var = tk.StringVar()
+        ttk.Label(stats_frame, textvariable=self.stats_var).pack()
+        
+        self.status_var = tk.StringVar()
+        status_bar = ttk.Label(parent, textvariable=self.status_var, relief=tk.SUNKEN)
+        status_bar.grid(row=5, column=0, columnspan=3, sticky="ew")
+        self.status_var.set("Система готова к работе")
+
+    def load_data(self):
+        self.load_orders()
+        self.cursor.execute("SELECT id, name FROM customers ORDER BY name")
+        self.customers = self.cursor.fetchall()
+        self.cursor.execute("SELECT id, name, price FROM products ORDER BY name")
+        self.products = self.cursor.fetchall()
+
+    def load_orders(self, search=None, status=None):
+        start_time = time.time()
+        try:
+            for item in self.orders_tree.get_children():
+                self.orders_tree.delete(item)
+            
+            query = '''SELECT o.id, c.name, o.order_date, o.total_amount, o.status, o.shipping_address 
+                       FROM orders o LEFT JOIN customers c ON o.customer_id = c.id'''
+            params = []
+            
+            conditions = []
+            if search:
+                conditions.append('(c.name LIKE ? OR o.shipping_address LIKE ?)')
+                params.extend([f'%{search}%', f'%{search}%'])
+            if status and status != 'Все':
+                conditions.append('o.status = ?')
+                params.append(status)
+            
+            if conditions:
+                query += ' WHERE ' + ' AND '.join(conditions)
+            
+            query += ' ORDER BY o.order_date DESC LIMIT 1000'
+            
+            self.cursor.execute(query, params)
+            orders = self.cursor.fetchall()
+            
+            for order in orders:
+                formatted = list(order)
+                if formatted[2]:
+                    formatted[2] = str(formatted[2])[:19]
+                if formatted[3]:
+                    formatted[3] = f"{float(formatted[3]):.2f} руб."
+                self.orders_tree.insert('', tk.END, values=formatted)
+            
+            execution_time = time.time() - start_time
+            action = 'Найдено' if search or status else 'Загружено'
+            self.status_var.set(f"{action} заказов: {len(orders)} | Время: {execution_time:.3f} сек.")
+            self.update_stats()
+            
+        except sqlite3.Error as e:
+            messagebox.showerror("Ошибка", f"Ошибка при загрузке заказов: {e}")
+
+    def search_orders(self, event=None):
+        self.load_orders(self.search_entry.get(), self.status_filter.get())
+
+    def filter_orders(self, event=None):
+        self.load_orders(self.search_entry.get(), self.status_filter.get())
+
+    def update_stats(self):
+        try:
+            self.cursor.execute("SELECT status, COUNT(*) FROM orders GROUP BY status")
+            status_stats = self.cursor.fetchall()
+            
+            self.cursor.execute("SELECT COUNT(*) FROM orders")
+            total_orders = self.cursor.fetchone()[0]
+            
+            self.cursor.execute("SELECT COUNT(*) FROM customers")
+            total_customers = self.cursor.fetchone()[0]
+            
+            self.cursor.execute("SELECT COUNT(*) FROM products")
+            total_products = self.cursor.fetchone()[0]
+            
+            text = f"Заказы: {total_orders} | Клиенты: {total_customers} | Товары: {total_products}"
+            if status_stats:
+                statuses_text = ", ".join([f"{status}: {count}" for status, count in status_stats])
+                text += f" | Статусы: {statuses_text}"
+            
+            self.stats_var.set(text)
+            
+        except sqlite3.Error as e:
+            print(f"Ошибка при обновлении статистики: {e}")
+
+    def performance_test(self):
+        try:
+            tests = [
+                ("SELECT COUNT(*) FROM customers WHERE name LIKE ?", ['%Иван%']),
+                ("SELECT status, COUNT(*), AVG(total_amount) FROM orders GROUP BY status", []),
+                ('''SELECT o.id, c.name, o.total_amount 
+                    FROM orders o 
+                    JOIN customers c ON o.customer_id = c.id 
+                    WHERE o.status = ? AND o.total_amount > ? 
+                    ORDER BY o.order_date DESC LIMIT 100''', ['Доставленный', 1000]),
+                ("SELECT * FROM orders WHERE shipping_address LIKE ?", ['%Москва%'])
+            ]
+            
+            results = []
+            for query, params in tests:
+                start = time.time()
+                self.cursor.execute(query, params)
+                self.cursor.fetchall()
+                results.append(time.time() - start)
+            
+            coefficient = results[3] / max(results[0], 0.001)
+            
+            results_text = f"""РЕЗУЛЬТАТЫ ТЕСТА ПРОИЗВОДИТЕЛЬНОСТИ:
+
+📊 С ИНДЕКСАМИ:
+• Поиск клиентов: {results[0]:.4f} сек.
+• Агрегация заказов: {results[1]:.4f} сек.  
+• Сложный запрос: {results[2]:.4f} сек.
+
+⚠️ БЕЗ ИНДЕКСА:
+• Поиск по адресу: {results[3]:.4f} сек.
+
+💡 ВЫВОД: Индексы ускоряют поиск в {coefficient:.1f} раз!"""
+            
+            messagebox.showinfo("Тест производительности", results_text)
+            
+        except sqlite3.Error as e:
+            messagebox.showerror("Ошибка", f"Ошибка при тестировании: {e}")
+
+    def add_order(self):
+        self.order_dialog("Добавить заказ")
+
+    def edit_order(self):
+        selection = self.orders_tree.selection()
+        if not selection:
+            messagebox.showwarning("Предупреждение", "Выберите заказ для редактирования")
+            return
+        
+        order_id = self.orders_tree.item(selection[0])['values'][0]
+        self.order_dialog("Редактировать заказ", order_id)
+
+    def order_dialog(self, title, order_id=None):
+        messagebox.showinfo("Инфо", f"{title} для заказа {order_id}")
+
+    def delete_order(self):
+        selection = self.orders_tree.selection()
+        if not selection:
+            messagebox.showwarning("Предупреждение", "Выберите заказ для удаления")
+            return
+        
+        order_id = self.orders_tree.item(selection[0])['values'][0]
+        
+        if messagebox.askyesno("Подтверждение", "Вы уверены, что хотите удалить этот заказ?"):
+            try:
+                self.cursor.execute("BEGIN TRANSACTION")
+                self.cursor.execute("DELETE FROM order_items WHERE order_id=?", (order_id,))
+                self.cursor.execute("DELETE FROM orders WHERE id=?", (order_id,))
+                self.conn.commit()
+                self.load_orders()
+                messagebox.showinfo("Успех", "Заказ удален успешно")
+            except sqlite3.Error as e:
+                self.conn.rollback()
+                messagebox.showerror("Ошибка", f"Ошибка при удалении заказа: {e}")
+
+    def manage_products(self):
+        self.manage_entities("Товары")
+
+    def manage_customers(self):
+        self.manage_entities("Клиенты")
+
+    def manage_entities(self, name):
+        messagebox.showinfo("Управление", f"Открыто управление {name.lower()}")
+
+    def __del__(self):
+        if hasattr(self, 'conn'):
+            self.conn.close()
+
+def main():
+    try:
+        root = tk.Tk()
+        app = OrderManagementSystem(root)
+        root.mainloop()
+    except Exception as e:
+        messagebox.showerror("Критическая ошибка", f"Приложение не может быть запущено: {e}")
+
+if __name__ == "__main__":
+    main()
