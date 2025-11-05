@@ -1,18 +1,13 @@
 import sqlite3
 import tkinter as tk
 from tkinter import ttk, messagebox
-from datetime import datetime, timedelta
-import random
-import time
 import sys
-from faker import Faker
 
 class OrderManagementSystem:
     def __init__(self, root):
         self.root = root
         self.root.title("Система управления заказами")
-        self.root.geometry("1200x700")
-        self.fake = Faker('ru_RU')
+        self.root.geometry("1000x600")
         self.initialize_database()
         self.create_interface()
         self.load_data()
@@ -20,12 +15,8 @@ class OrderManagementSystem:
     def initialize_database(self):
         try:
             self.conn = sqlite3.connect('orders.db', check_same_thread=False)
-            self.conn.execute("PRAGMA journal_mode=WAL")
-            self.conn.execute("PRAGMA synchronous=NORMAL")
             self.cursor = self.conn.cursor()
             self.create_tables()
-            self.create_indexes()
-            self.conn.commit()
             self.add_sample_data()
         except sqlite3.Error as e:
             messagebox.showerror("Ошибка базы данных", f"Ошибка при инициализации БД: {e}")
@@ -36,18 +27,15 @@ class OrderManagementSystem:
             '''CREATE TABLE IF NOT EXISTS customers (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, 
                 name TEXT NOT NULL, 
-                email TEXT UNIQUE, 
                 phone TEXT, 
-                address TEXT, 
-                created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                address TEXT
             )''',
             '''CREATE TABLE IF NOT EXISTS products (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, 
                 name TEXT NOT NULL, 
                 price DECIMAL(10,2) NOT NULL, 
                 category TEXT, 
-                stock_quantity INTEGER DEFAULT 0, 
-                created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                stock_quantity INTEGER DEFAULT 0
             )''',
             '''CREATE TABLE IF NOT EXISTS orders (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, 
@@ -55,8 +43,7 @@ class OrderManagementSystem:
                 order_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP, 
                 total_amount DECIMAL(10,2) DEFAULT 0, 
                 status TEXT DEFAULT 'В ожидании', 
-                shipping_address TEXT, 
-                notes TEXT, 
+                shipping_address TEXT,
                 FOREIGN KEY (customer_id) REFERENCES customers (id)
             )''',
             '''CREATE TABLE IF NOT EXISTS order_items (
@@ -64,223 +51,140 @@ class OrderManagementSystem:
                 order_id INTEGER, 
                 product_id INTEGER, 
                 quantity INTEGER NOT NULL, 
-                unit_price DECIMAL(10,2) NOT NULL, 
+                unit_price DECIMAL(10,2) NOT NULL,
                 FOREIGN KEY (order_id) REFERENCES orders (id), 
                 FOREIGN KEY (product_id) REFERENCES products (id)
             )'''
         ]
         for sql in tables:
             self.cursor.execute(sql)
-
-    def create_indexes(self):
-        indexes = [
-            ("idx_orders_status", "orders", "status"),
-            ("idx_orders_customer_id", "orders", "customer_id"),
-            ("idx_orders_date", "orders", "order_date"),
-            ("idx_orders_customer_status", "orders", "customer_id, status"),
-            ("idx_orders_amount", "orders", "total_amount"),
-            ("idx_order_items_order_id", "order_items", "order_id"),
-            ("idx_order_items_product_id", "order_items", "product_id"),
-            ("idx_order_items_composite", "order_items", "order_id, product_id"),
-            ("idx_customers_name", "customers", "name"),
-            ("idx_customers_email", "customers", "email"),
-            ("idx_customers_phone", "customers", "phone"),
-            ("idx_products_category", "products", "category"),
-            ("idx_products_price", "products", "price"),
-            ("idx_products_name", "products", "name"),
-            ("idx_products_stock", "products", "stock_quantity")
-        ]
-        for name, table, fields in indexes:
-            self.cursor.execute(f"CREATE INDEX IF NOT EXISTS {name} ON {table}({fields})")
-
-    def add_sample_data(self):
-        for table in ['customers', 'products', 'orders']:
-            self.cursor.execute(f"SELECT COUNT(*) FROM {table}")
-            if self.cursor.fetchone()[0] == 0:
-                if table == 'customers':
-                    self.generate_customers(50)
-                elif table == 'products':
-                    self.generate_products(12)
-                else:
-                    self.generate_orders(100)
         self.conn.commit()
 
-    def generate_customers(self, count):
-        data = [(self.fake.name(), self.fake.email(), self.fake.phone_number(), self.fake.address()) 
-                for _ in range(count)]
-        self.cursor.executemany(
-            "INSERT INTO customers (name, email, phone, address) VALUES (?, ?, ?, ?)", 
-            data
-        )
-
-    def generate_products(self, count):
-        products = [
-            ('Ноутбук HP Pavilion', 45000.00, 'Электроника', 10),
-            ('Смартфон Samsung Galaxy', 35000.00, 'Электроника', 15),
-            ('Наушники Sony WH-1000XM4', 25000.00, 'Электроника', 20),
-            ('Планшет iPad Air', 55000.00, 'Электроника', 8),
-            ('Умные часы Apple Watch', 30000.00, 'Электроника', 12),
-            ('Книга "Python для начинающих"', 1500.00, 'Книги', 50),
-            ('Книга "Алгоритмы и структуры данных"', 2000.00, 'Книги', 30),
-            ('Книга "Чистый код"', 1800.00, 'Книги', 40),
-            ('Кофемашина DeLonghi', 45000.00, 'Бытовая техника', 5),
-            ('Холодильник Samsung', 80000.00, 'Бытовая техника', 4),
-            ('Футболка хлопковая', 1500.00, 'Одежда', 100),
-            ('Джинсы классические', 3000.00, 'Одежда', 50)
-        ]
-        self.cursor.executemany(
-            "INSERT INTO products (name, price, category, stock_quantity) VALUES (?, ?, ?, ?)", 
-            products[:count]
-        )
-
-    def generate_orders(self, count):
-        self.cursor.execute("SELECT id FROM customers")
-        customer_ids = [row[0] for row in self.cursor.fetchall()]
+    def add_sample_data(self):
+        self.cursor.execute("SELECT COUNT(*) FROM customers")
+        if self.cursor.fetchone()[0] == 0:
+            customers = [
+                ("Иван Иванов", "+79161234567", "Москва, ул. Ленина, 1"),
+                ("Мария Петрова", "+79161234568", "СПб, ул. Пушкина, 10"),
+                ("Алексей Сидоров", "+79161234569", "Казань, ул. Баумана, 5")
+            ]
+            self.cursor.executemany("INSERT INTO customers (name, phone, address) VALUES (?, ?, ?)", customers)
         
-        self.cursor.execute("SELECT id, price FROM products")
-        products_data = self.cursor.fetchall()
+        self.cursor.execute("SELECT COUNT(*) FROM products")
+        if self.cursor.fetchone()[0] == 0:
+            products = [
+                ('Ноутбук HP Pavilion', 45000.00, 'Электроника', 10),
+                ('Смартфон Samsung Galaxy', 35000.00, 'Электроника', 15),
+                ('Наушники Sony', 25000.00, 'Электроника', 20),
+                ('Книга "Python для начинающих"', 1500.00, 'Книги', 50)
+            ]
+            self.cursor.executemany("INSERT INTO products (name, price, category, stock_quantity) VALUES (?, ?, ?, ?)", products)
         
-        statuses = ['В ожидании', 'В обработке', 'Отправленный', 'Доставленный', 'Отменённый']
-        
-        for i in range(count):
-            customer_id = random.choice(customer_ids)
-            status = random.choice(statuses)
-            order_date = datetime.now() - timedelta(days=random.randint(0, 90))
-            shipping_address = self.fake.address()
-            
-            self.cursor.execute(
-                'INSERT INTO orders (customer_id, order_date, status, shipping_address) VALUES (?, ?, ?, ?)', 
-                (customer_id, order_date, status, shipping_address)
-            )
-            order_id = self.cursor.lastrowid
-            total_amount = 0
-            
-            order_products = random.sample(products_data, random.randint(1, 4))
-            for product_id, price in order_products:
-                quantity = random.randint(1, 3)
-                self.cursor.execute(
-                    'INSERT INTO order_items (order_id, product_id, quantity, unit_price) VALUES (?, ?, ?, ?)', 
-                    (order_id, product_id, quantity, price)
-                )
-                total_amount += price * quantity
-            
-            self.cursor.execute('UPDATE orders SET total_amount = ? WHERE id = ?', (total_amount, order_id))
+        self.conn.commit()
 
     def create_interface(self):
         main_frame = ttk.Frame(self.root, padding="10")
-        main_frame.grid(row=0, column=0, sticky="nsew")
+        main_frame.pack(fill=tk.BOTH, expand=True)
         
-        self.root.columnconfigure(0, weight=1)
-        self.root.rowconfigure(0, weight=1)
-        main_frame.columnconfigure(1, weight=1)
-        main_frame.rowconfigure(3, weight=1)
+        ttk.Label(main_frame, text="Система управления заказами", font=('Arial', 14, 'bold')).pack(pady=(0, 10))
         
-        title_label = ttk.Label(
-            main_frame, 
-            text="Система управления заказами", 
-            font=('Arial', 16, 'bold')
-        )
-        title_label.grid(row=0, column=0, columnspan=3, pady=(0, 20))
+        search_frame = ttk.Frame(main_frame)
+        search_frame.pack(fill=tk.X, pady=(0, 10))
         
-        self.create_search_panel(main_frame)
-        self.create_control_panel(main_frame)
-        self.create_orders_table(main_frame)
-        self.create_stats_and_status(main_frame)
-
-    def create_search_panel(self, parent):
-        search_frame = ttk.LabelFrame(parent, text="Поиск и фильтрация", padding="10")
-        search_frame.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(0, 10))
-        search_frame.columnconfigure(1, weight=1)
-        
-        ttk.Label(search_frame, text="Поиск:").grid(row=0, column=0, padx=(0, 5))
+        ttk.Label(search_frame, text="Поиск:").pack(side=tk.LEFT, padx=(0, 5))
         self.search_entry = ttk.Entry(search_frame, width=30)
-        self.search_entry.grid(row=0, column=1, padx=(0, 10), sticky="ew")
+        self.search_entry.pack(side=tk.LEFT, padx=(0, 10))
         self.search_entry.bind('<KeyRelease>', self.search_orders)
         
-        ttk.Label(search_frame, text="Статус:").grid(row=0, column=2, padx=(0, 5))
-        self.status_filter = ttk.Combobox(
-            search_frame, 
-            values=['Все', 'В ожидании', 'В обработке', 'Отправленный', 'Доставленный', 'Отменённый'], 
-            state="readonly"
-        )
+        ttk.Label(search_frame, text="Статус:").pack(side=tk.LEFT, padx=(0, 5))
+        self.status_filter = ttk.Combobox(search_frame, values=['Все', 'В ожидании', 'В обработке', 'Отправленный', 'Доставленный', 'Отменённый'], 
+                                         state="readonly", width=15)
         self.status_filter.set('Все')
-        self.status_filter.grid(row=0, column=3, padx=(0, 10))
+        self.status_filter.pack(side=tk.LEFT, padx=(0, 10))
         self.status_filter.bind('<<ComboboxSelected>>', self.filter_orders)
-
-    def create_control_panel(self, parent):
-        button_frame = ttk.Frame(parent)
-        button_frame.grid(row=2, column=0, columnspan=3, pady=(0, 10))
         
-        buttons_data = [
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        buttons = [
             ("Добавить заказ", self.add_order),
             ("Редактировать", self.edit_order),
             ("Удалить", self.delete_order),
-            ("Обновить", self.load_orders),
-            ("Управление товарами", self.manage_products),
-            ("Управление клиентами", self.manage_customers),
-            ("Тест производительности", self.performance_test),
-            ("Добавить 50 заказов", lambda: self.generate_orders(50))
+            ("Обновить", self.refresh_data),
+            ("Товары", self.manage_products),
+            ("Клиенты", self.manage_customers)
         ]
         
-        for text, command in buttons_data:
+        for text, command in buttons:
             ttk.Button(button_frame, text=text, command=command).pack(side=tk.LEFT, padx=(0, 5))
-
-    def create_orders_table(self, parent):
-        columns = ('ID', 'Клиент', 'Дата заказа', 'Сумма', 'Статус', 'Адрес доставки')
-        self.orders_tree = ttk.Treeview(parent, columns=columns, show='headings', height=15)
+        
+        table_frame = ttk.Frame(main_frame)
+        table_frame.pack(fill=tk.BOTH, expand=True)
+        
+        columns = ('ID', 'Клиент', 'Телефон', 'Адрес', 'Дата заказа', 'Сумма', 'Статус')
+        self.orders_tree = ttk.Treeview(table_frame, columns=columns, show='headings', height=12)
         
         column_widths = {
-            'ID': 60, 
+            'ID': 50, 
             'Клиент': 150, 
+            'Телефон': 120, 
+            'Адрес': 200, 
             'Дата заказа': 150, 
             'Сумма': 100, 
-            'Статус': 100, 
-            'Адрес доставки': 250
+            'Статус': 100
         }
         
-        for column in columns:
-            self.orders_tree.heading(column, text=column)
-            self.orders_tree.column(column, width=column_widths[column])
+        for col in columns:
+            self.orders_tree.heading(col, text=col)
+            self.orders_tree.column(col, width=column_widths[col])
         
-        scrollbar = ttk.Scrollbar(parent, orient=tk.VERTICAL, command=self.orders_tree.yview)
+        scrollbar = ttk.Scrollbar(table_frame, orient=tk.VERTICAL, command=self.orders_tree.yview)
         self.orders_tree.configure(yscrollcommand=scrollbar.set)
         
-        self.orders_tree.grid(row=3, column=0, columnspan=2, sticky="nsew", pady=(0, 10))
-        scrollbar.grid(row=3, column=2, sticky="ns", pady=(0, 10))
-
-    def create_stats_and_status(self, parent):
-        stats_frame = ttk.LabelFrame(parent, text="Статистика", padding="5")
-        stats_frame.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(0, 5))
-        
-        self.stats_var = tk.StringVar()
-        ttk.Label(stats_frame, textvariable=self.stats_var).pack()
+        self.orders_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         
         self.status_var = tk.StringVar()
-        status_bar = ttk.Label(parent, textvariable=self.status_var, relief=tk.SUNKEN)
-        status_bar.grid(row=5, column=0, columnspan=3, sticky="ew")
+        status_bar = ttk.Label(main_frame, textvariable=self.status_var, relief=tk.SUNKEN)
+        status_bar.pack(fill=tk.X, pady=(5, 0))
         self.status_var.set("Система готова к работе")
 
+    def refresh_data(self):
+        """Обновление всех данных"""
+        self.load_data()
+        self.status_var.set("Данные обновлены")
+
     def load_data(self):
+        self.load_customers()
+        self.load_products()
         self.load_orders()
-        self.cursor.execute("SELECT id, name FROM customers ORDER BY name")
-        self.customers = self.cursor.fetchall()
-        self.cursor.execute("SELECT id, name, price FROM products ORDER BY name")
-        self.products = self.cursor.fetchall()
+
+    def load_customers(self):
+        try:
+            self.cursor.execute("SELECT id, name, phone, address FROM customers ORDER BY name")
+            self.customers = self.cursor.fetchall()
+        except sqlite3.Error as e:
+            messagebox.showerror("Ошибка", f"Ошибка при загрузке клиентов: {e}")
+
+    def load_products(self):
+        try:
+            self.cursor.execute("SELECT id, name, price, category, stock_quantity FROM products ORDER BY name")
+            self.products = self.cursor.fetchall()
+        except sqlite3.Error as e:
+            messagebox.showerror("Ошибка", f"Ошибка при загрузке товаров: {e}")
 
     def load_orders(self, search=None, status=None):
-        start_time = time.time()
         try:
-            for item in self.orders_tree.get_children():
-                self.orders_tree.delete(item)
+            self.orders_tree.delete(*self.orders_tree.get_children())
             
-            query = '''SELECT o.id, c.name, o.order_date, o.total_amount, o.status, o.shipping_address 
+            query = '''SELECT o.id, c.name, c.phone, c.address, o.order_date, o.total_amount, o.status 
                        FROM orders o LEFT JOIN customers c ON o.customer_id = c.id'''
             params = []
             
             conditions = []
             if search:
-                conditions.append('(c.name LIKE ? OR o.shipping_address LIKE ?)')
-                params.extend([f'%{search}%', f'%{search}%'])
+                conditions.append('(c.name LIKE ? OR c.phone LIKE ? OR o.shipping_address LIKE ?)')
+                params.extend([f'%{search}%', f'%{search}%', f'%{search}%'])
             if status and status != 'Все':
                 conditions.append('o.status = ?')
                 params.append(status)
@@ -288,23 +192,18 @@ class OrderManagementSystem:
             if conditions:
                 query += ' WHERE ' + ' AND '.join(conditions)
             
-            query += ' ORDER BY o.order_date DESC LIMIT 1000'
+            query += ' ORDER BY o.order_date DESC'
             
             self.cursor.execute(query, params)
-            orders = self.cursor.fetchall()
             
-            for order in orders:
+            for order in self.cursor.fetchall():
                 formatted = list(order)
-                if formatted[2]:
-                    formatted[2] = str(formatted[2])[:19]
-                if formatted[3]:
-                    formatted[3] = f"{float(formatted[3]):.2f} руб."
+                formatted[4] = str(formatted[4])[:16] if formatted[4] else ""
+                formatted[5] = f"{float(formatted[5] or 0):.2f} руб."
                 self.orders_tree.insert('', tk.END, values=formatted)
             
-            execution_time = time.time() - start_time
-            action = 'Найдено' if search or status else 'Загружено'
-            self.status_var.set(f"{action} заказов: {len(orders)} | Время: {execution_time:.3f} сек.")
-            self.update_stats()
+            count = len(self.orders_tree.get_children())
+            self.status_var.set(f"Загружено заказов: {count}")
             
         except sqlite3.Error as e:
             messagebox.showerror("Ошибка", f"Ошибка при загрузке заказов: {e}")
@@ -315,71 +214,8 @@ class OrderManagementSystem:
     def filter_orders(self, event=None):
         self.load_orders(self.search_entry.get(), self.status_filter.get())
 
-    def update_stats(self):
-        try:
-            self.cursor.execute("SELECT status, COUNT(*) FROM orders GROUP BY status")
-            status_stats = self.cursor.fetchall()
-            
-            self.cursor.execute("SELECT COUNT(*) FROM orders")
-            total_orders = self.cursor.fetchone()[0]
-            
-            self.cursor.execute("SELECT COUNT(*) FROM customers")
-            total_customers = self.cursor.fetchone()[0]
-            
-            self.cursor.execute("SELECT COUNT(*) FROM products")
-            total_products = self.cursor.fetchone()[0]
-            
-            text = f"Заказы: {total_orders} | Клиенты: {total_customers} | Товары: {total_products}"
-            if status_stats:
-                statuses_text = ", ".join([f"{status}: {count}" for status, count in status_stats])
-                text += f" | Статусы: {statuses_text}"
-            
-            self.stats_var.set(text)
-            
-        except sqlite3.Error as e:
-            print(f"Ошибка при обновлении статистики: {e}")
-
-    def performance_test(self):
-        try:
-            tests = [
-                ("SELECT COUNT(*) FROM customers WHERE name LIKE ?", ['%Иван%']),
-                ("SELECT status, COUNT(*), AVG(total_amount) FROM orders GROUP BY status", []),
-                ('''SELECT o.id, c.name, o.total_amount 
-                    FROM orders o 
-                    JOIN customers c ON o.customer_id = c.id 
-                    WHERE o.status = ? AND o.total_amount > ? 
-                    ORDER BY o.order_date DESC LIMIT 100''', ['Доставленный', 1000]),
-                ("SELECT * FROM orders WHERE shipping_address LIKE ?", ['%Москва%'])
-            ]
-            
-            results = []
-            for query, params in tests:
-                start = time.time()
-                self.cursor.execute(query, params)
-                self.cursor.fetchall()
-                results.append(time.time() - start)
-            
-            coefficient = results[3] / max(results[0], 0.001)
-            
-            results_text = f"""РЕЗУЛЬТАТЫ ТЕСТА ПРОИЗВОДИТЕЛЬНОСТИ:
-
-📊 С ИНДЕКСАМИ:
-• Поиск клиентов: {results[0]:.4f} сек.
-• Агрегация заказов: {results[1]:.4f} сек.  
-• Сложный запрос: {results[2]:.4f} сек.
-
-⚠️ БЕЗ ИНДЕКСА:
-• Поиск по адресу: {results[3]:.4f} сек.
-
-💡 ВЫВОД: Индексы ускоряют поиск в {coefficient:.1f} раз!"""
-            
-            messagebox.showinfo("Тест производительности", results_text)
-            
-        except sqlite3.Error as e:
-            messagebox.showerror("Ошибка", f"Ошибка при тестировании: {e}")
-
     def add_order(self):
-        self.order_dialog("Добавить заказ")
+        self.order_dialog()
 
     def edit_order(self):
         selection = self.orders_tree.selection()
@@ -388,10 +224,305 @@ class OrderManagementSystem:
             return
         
         order_id = self.orders_tree.item(selection[0])['values'][0]
-        self.order_dialog("Редактировать заказ", order_id)
+        self.order_dialog(order_id)
 
-    def order_dialog(self, title, order_id=None):
-        messagebox.showinfo("Инфо", f"{title} для заказа {order_id}")
+    def calculate_total(self, items_tree, total_var):
+        total = 0
+        for item in items_tree.get_children():
+            values = items_tree.item(item)['values']
+            if len(values) > 3:
+                total += float(values[3])
+        total_var.set(f"{total:.2f} руб.")
+
+    def order_dialog(self, order_id=None):
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Редактировать заказ" if order_id else "Добавить заказ")
+        dialog.geometry("600x500")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        main_frame = ttk.Frame(dialog, padding="10")
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        ttk.Label(main_frame, text="Имя клиента:").grid(row=0, column=0, sticky=tk.W, pady=5)
+        name_entry = ttk.Entry(main_frame)
+        name_entry.grid(row=0, column=1, sticky=(tk.W, tk.E), pady=5)
+        
+        ttk.Label(main_frame, text="Телефон:").grid(row=1, column=0, sticky=tk.W, pady=5)
+        phone_entry = ttk.Entry(main_frame)
+        phone_entry.grid(row=1, column=1, sticky=(tk.W, tk.E), pady=5)
+        
+        ttk.Label(main_frame, text="Адрес:").grid(row=2, column=0, sticky=tk.W, pady=5)
+        address_entry = ttk.Entry(main_frame)
+        address_entry.grid(row=2, column=1, sticky=(tk.W, tk.E), pady=5)
+        
+        ttk.Label(main_frame, text="Статус:").grid(row=3, column=0, sticky=tk.W, pady=5)
+        status_var = tk.StringVar(value='В ожидании')
+        status_combo = ttk.Combobox(main_frame, textvariable=status_var, state="readonly", 
+                                   values=['В ожидании', 'В обработке', 'Отправленный', 'Доставленный', 'Отменённый'])
+        status_combo.set('В ожидании')
+        status_combo.grid(row=3, column=1, sticky=(tk.W, tk.E), pady=5)
+        
+        ttk.Label(main_frame, text="Товары:").grid(row=4, column=0, sticky=tk.W, pady=5)
+        
+        items_frame = ttk.Frame(main_frame)
+        items_frame.grid(row=5, column=0, columnspan=2, sticky="nsew", pady=5)
+        main_frame.rowconfigure(5, weight=1)
+        
+        columns = ('Товар', 'Количество', 'Цена', 'Сумма')
+        items_tree = ttk.Treeview(items_frame, columns=columns, show='headings', height=6)
+        
+        for col in columns:
+            items_tree.heading(col, text=col)
+            items_tree.column(col, width=100)
+        
+        items_scrollbar = ttk.Scrollbar(items_frame, orient=tk.VERTICAL, command=items_tree.yview)
+        items_tree.configure(yscrollcommand=items_scrollbar.set)
+        
+        items_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        items_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        items_buttons_frame = ttk.Frame(main_frame)
+        items_buttons_frame.grid(row=6, column=0, columnspan=2, pady=5)
+        
+        ttk.Label(main_frame, text="Общая сумма:").grid(row=7, column=0, sticky=tk.W, pady=5)
+        total_var = tk.StringVar(value="0.00 руб.")
+        total_label = ttk.Label(main_frame, textvariable=total_var, font=('Arial', 10, 'bold'))
+        total_label.grid(row=7, column=1, sticky=tk.W, pady=5)
+        
+        def add_product():
+            self.add_product_to_order_dialog(items_tree, total_var)
+        
+        def edit_product():
+            self.edit_product_in_order(items_tree, total_var)
+        
+        def remove_product():
+            self.remove_product_from_order(items_tree)
+            self.calculate_total(items_tree, total_var)
+        
+        ttk.Button(items_buttons_frame, text="Добавить товар", command=add_product).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(items_buttons_frame, text="Изменить количество", command=edit_product).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(items_buttons_frame, text="Удалить товар", command=remove_product).pack(side=tk.LEFT, padx=(0, 5))
+        
+        if order_id:
+            try:
+                self.cursor.execute("SELECT * FROM orders WHERE id=?", (order_id,))
+                order_data = self.cursor.fetchone()
+                if order_data:
+                    customer = next((c for c in self.customers if c[0] == order_data[1]), None)
+                    if customer:
+                        name_entry.insert(0, customer[1])
+                        phone_entry.insert(0, customer[2])
+                        address_entry.insert(0, customer[3])
+                    
+                    status_var.set(order_data[4])
+                    
+                    self.cursor.execute('''SELECT p.id, p.name, oi.quantity, oi.unit_price 
+                                         FROM order_items oi JOIN products p ON oi.product_id = p.id 
+                                         WHERE oi.order_id=?''', (order_id,))
+                    order_items_data = self.cursor.fetchall()
+                    
+                    for product_id, product_name, quantity, price in order_items_data:
+                        total = quantity * price
+                        items_tree.insert('', tk.END, values=(
+                            product_name, quantity, f"{price:.2f}", f"{total:.2f}"
+                        ))
+                    
+                    self.calculate_total(items_tree, total_var)
+                    
+            except sqlite3.Error as e:
+                messagebox.showerror("Ошибка", f"Ошибка при загрузке заказа: {e}")
+        
+        def save_order():
+            try:
+                if not name_entry.get().strip():
+                    messagebox.showwarning("Предупреждение", "Введите имя клиента")
+                    return
+                
+                if not phone_entry.get().strip():
+                    messagebox.showwarning("Предупреждение", "Введите телефон клиента")
+                    return
+                
+                if items_tree.get_children() == ():
+                    messagebox.showwarning("Предупреждение", "Добавьте хотя бы один товар в заказ")
+                    return
+                
+                customer_name = name_entry.get().strip()
+                customer_phone = phone_entry.get().strip()
+                customer_address = address_entry.get().strip()
+                
+                customer = next((c for c in self.customers if c[1] == customer_name and c[2] == customer_phone), None)
+                if not customer:
+                    self.cursor.execute("INSERT INTO customers (name, phone, address) VALUES (?, ?, ?)", 
+                                      (customer_name, customer_phone, customer_address))
+                    customer_id = self.cursor.lastrowid
+                    self.load_customers()
+                else:
+                    customer_id = customer[0]
+                    if customer_address != customer[3]:
+                        self.cursor.execute("UPDATE customers SET address=? WHERE id=?", 
+                                          (customer_address, customer_id))
+                
+                total_amount = 0
+                for item in items_tree.get_children():
+                    values = items_tree.item(item)['values']
+                    total_amount += float(values[3])
+                
+                if order_id:
+                    self.cursor.execute('''UPDATE orders SET customer_id=?, status=?, shipping_address=?, total_amount=?
+                                         WHERE id=?''', 
+                                      (customer_id, status_var.get(), customer_address, total_amount, order_id))
+                    self.cursor.execute("DELETE FROM order_items WHERE order_id=?", (order_id,))
+                    order_id_to_use = order_id
+                else:
+                    self.cursor.execute('''INSERT INTO orders (customer_id, status, shipping_address, total_amount) 
+                                         VALUES (?, ?, ?, ?)''', 
+                                      (customer_id, status_var.get(), customer_address, total_amount))
+                    order_id_to_use = self.cursor.lastrowid
+                
+                for item in items_tree.get_children():
+                    values = items_tree.item(item)['values']
+                    product_name = values[0]
+                    quantity = int(values[1])
+                    unit_price = float(values[2])
+                    
+                    product = next((p for p in self.products if p[1] == product_name), None)
+                    if product:
+                        self.cursor.execute('''INSERT INTO order_items (order_id, product_id, quantity, unit_price)
+                                             VALUES (?, ?, ?, ?)''', 
+                                          (order_id_to_use, product[0], quantity, unit_price))
+                
+                self.conn.commit()
+                self.refresh_data()
+                dialog.destroy()
+                messagebox.showinfo("Успех", "Заказ сохранен успешно")
+                
+            except Exception as e:
+                messagebox.showerror("Ошибка", f"Ошибка при сохранении заказа: {e}")
+        
+        button_frame = ttk.Frame(main_frame)
+        button_frame.grid(row=8, column=0, columnspan=2, pady=20)
+        
+        ttk.Button(button_frame, text="Сохранить", command=save_order).pack(side=tk.LEFT, padx=(0, 10))
+        ttk.Button(button_frame, text="Отмена", command=dialog.destroy).pack(side=tk.LEFT)
+        
+        main_frame.columnconfigure(1, weight=1)
+        main_frame.rowconfigure(5, weight=1)
+
+    def add_product_to_order_dialog(self, items_tree, total_var):
+        if not self.products:
+            messagebox.showwarning("Предупреждение", "Нет доступных товаров")
+            return
+            
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Добавить товар")
+        dialog.geometry("400x200")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        main_frame = ttk.Frame(dialog, padding="10")
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        ttk.Label(main_frame, text="Товар:").grid(row=0, column=0, sticky=tk.W, pady=5)
+        product_var = tk.StringVar()
+        product_combo = ttk.Combobox(main_frame, textvariable=product_var, state="readonly")
+        product_combo['values'] = [f"{p[1]} - {p[2]} руб. (в наличии: {p[4]})" for p in self.products]
+        product_combo.current(0)
+        product_combo.grid(row=0, column=1, sticky=(tk.W, tk.E), pady=5)
+        
+        ttk.Label(main_frame, text="Количество:").grid(row=1, column=0, sticky=tk.W, pady=5)
+        quantity_var = tk.StringVar(value="1")
+        quantity_spin = ttk.Spinbox(main_frame, from_=1, to=100, textvariable=quantity_var, width=10)
+        quantity_spin.grid(row=1, column=1, sticky=tk.W, pady=5)
+        
+        def add_to_order():
+            product_str = product_var.get()
+            quantity = quantity_var.get()
+            
+            if product_str and quantity:
+                try:
+                    quantity = int(quantity)
+                    product_name = product_str.split(' - ')[0]
+                    price_str = product_str.split(' - ')[1].split(' руб.')[0]
+                    price = float(price_str)
+                    
+                    total = quantity * price
+                    
+                    items_tree.insert('', tk.END, values=(
+                        product_name, quantity, f"{price:.2f}", f"{total:.2f}"
+                    ))
+                    
+                    self.calculate_total(items_tree, total_var)
+                    dialog.destroy()
+                except (ValueError, IndexError) as e:
+                    messagebox.showerror("Ошибка", f"Ошибка при добавлении товара: {e}")
+            else:
+                messagebox.showwarning("Предупреждение", "Выберите товар и укажите количество")
+        
+        button_frame = ttk.Frame(main_frame)
+        button_frame.grid(row=2, column=0, columnspan=2, pady=10)
+        
+        ttk.Button(button_frame, text="Добавить", command=add_to_order).pack(side=tk.LEFT, padx=(0, 10))
+        ttk.Button(button_frame, text="Отмена", command=dialog.destroy).pack(side=tk.LEFT)
+        
+        main_frame.columnconfigure(1, weight=1)
+
+    def edit_product_in_order(self, items_tree, total_var):
+        selection = items_tree.selection()
+        if not selection:
+            messagebox.showwarning("Предупреждение", "Выберите товар для изменения количества")
+            return
+        
+        item = selection[0]
+        values = items_tree.item(item)['values']
+        product_name = values[0]
+        current_quantity = values[1]
+        price = float(values[2])
+        
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Изменить количество")
+        dialog.geometry("300x150")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        main_frame = ttk.Frame(dialog, padding="10")
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        ttk.Label(main_frame, text=f"Товар: {product_name}").pack(pady=5)
+        ttk.Label(main_frame, text="Количество:").pack(pady=5)
+        
+        quantity_var = tk.StringVar(value=str(current_quantity))
+        quantity_spin = ttk.Spinbox(main_frame, from_=1, to=100, textvariable=quantity_var, width=10)
+        quantity_spin.pack(pady=5)
+        
+        def save_quantity():
+            try:
+                new_quantity = int(quantity_var.get())
+                new_total = new_quantity * price
+                
+                items_tree.item(item, values=(
+                    product_name, new_quantity, f"{price:.2f}", f"{new_total:.2f}"
+                ))
+                
+                self.calculate_total(items_tree, total_var)
+                dialog.destroy()
+            except ValueError:
+                messagebox.showerror("Ошибка", "Введите корректное количество")
+        
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(pady=10)
+        
+        ttk.Button(button_frame, text="Сохранить", command=save_quantity).pack(side=tk.LEFT, padx=(0, 10))
+        ttk.Button(button_frame, text="Отмена", command=dialog.destroy).pack(side=tk.LEFT)
+
+    def remove_product_from_order(self, items_tree):
+        selection = items_tree.selection()
+        if not selection:
+            messagebox.showwarning("Предупреждение", "Выберите товар для удаления")
+            return
+        
+        for item in selection:
+            items_tree.delete(item)
 
     def delete_order(self):
         selection = self.orders_tree.selection()
@@ -401,38 +532,324 @@ class OrderManagementSystem:
         
         order_id = self.orders_tree.item(selection[0])['values'][0]
         
-        if messagebox.askyesno("Подтверждение", "Вы уверены, что хотите удалить этот заказ?"):
+        if messagebox.askyesno("Подтверждение", "Удалить выбранный заказ?"):
             try:
-                self.cursor.execute("BEGIN TRANSACTION")
                 self.cursor.execute("DELETE FROM order_items WHERE order_id=?", (order_id,))
                 self.cursor.execute("DELETE FROM orders WHERE id=?", (order_id,))
                 self.conn.commit()
-                self.load_orders()
-                messagebox.showinfo("Успех", "Заказ удален успешно")
+                self.refresh_data()
+                messagebox.showinfo("Успех", "Заказ удален")
             except sqlite3.Error as e:
-                self.conn.rollback()
-                messagebox.showerror("Ошибка", f"Ошибка при удалении заказа: {e}")
+                messagebox.showerror("Ошибка", f"Ошибка при удалении: {e}")
 
     def manage_products(self):
-        self.manage_entities("Товары")
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Управление товарами")
+        dialog.geometry("700x450")
+        
+        main_frame = ttk.Frame(dialog, padding="10")
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        ttk.Button(button_frame, text="Добавить товар", 
+                  command=lambda: self.product_dialog()).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(button_frame, text="Редактировать", 
+                  command=lambda: self.edit_product(tree)).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(button_frame, text="Удалить", 
+                  command=lambda: self.delete_product(tree)).pack(side=tk.LEFT, padx=(0, 5))
+        
+        tree_frame = ttk.Frame(main_frame)
+        tree_frame.pack(fill=tk.BOTH, expand=True)
+        
+        columns = ('ID', 'Название', 'Цена', 'Категория', 'На складе')
+        tree = ttk.Treeview(tree_frame, columns=columns, show='headings', height=15)
+        
+        tree.column('ID', width=50)
+        tree.column('Название', width=200)
+        tree.column('Цена', width=100)
+        tree.column('Категория', width=150)
+        tree.column('На складе', width=80)
+        
+        for col in columns:
+            tree.heading(col, text=col)
+        
+        scrollbar = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=tree.yview)
+        tree.configure(yscrollcommand=scrollbar.set)
+        
+        tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        self.load_products_table(tree)
+        
+        ttk.Button(main_frame, text="Закрыть", command=dialog.destroy).pack(pady=(10, 0))
+
+    def load_products_table(self, tree):
+        tree.delete(*tree.get_children())
+        try:
+            self.cursor.execute("SELECT * FROM products ORDER BY id")
+            for product in self.cursor.fetchall():
+                tree.insert('', tk.END, values=product)
+        except sqlite3.Error as e:
+            messagebox.showerror("Ошибка", f"Ошибка при загрузке товаров: {e}")
+
+    def product_dialog(self, product_id=None):
+        title = "Редактировать товар" if product_id else "Добавить товар"
+        dialog = tk.Toplevel(self.root)
+        dialog.title(title)
+        dialog.geometry("400x300")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        main_frame = ttk.Frame(dialog, padding="10")
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        ttk.Label(main_frame, text="Название:").grid(row=0, column=0, sticky=tk.W, pady=5)
+        name_entry = ttk.Entry(main_frame, width=30)
+        name_entry.grid(row=0, column=1, sticky=(tk.W, tk.E), pady=5)
+        
+        ttk.Label(main_frame, text="Цена:").grid(row=1, column=0, sticky=tk.W, pady=5)
+        price_entry = ttk.Entry(main_frame, width=30)
+        price_entry.grid(row=1, column=1, sticky=(tk.W, tk.E), pady=5)
+        
+        ttk.Label(main_frame, text="Категория:").grid(row=2, column=0, sticky=tk.W, pady=5)
+        category_entry = ttk.Entry(main_frame, width=30)
+        category_entry.grid(row=2, column=1, sticky=(tk.W, tk.E), pady=5)
+        
+        ttk.Label(main_frame, text="Количество на складе:").grid(row=3, column=0, sticky=tk.W, pady=5)
+        quantity_entry = ttk.Entry(main_frame, width=30)
+        quantity_entry.grid(row=3, column=1, sticky=(tk.W, tk.E), pady=5)
+        
+        if product_id:
+            product = next((p for p in self.products if p[0] == product_id), None)
+            if product:
+                name_entry.insert(0, product[1])
+                price_entry.insert(0, str(product[2]))
+                category_entry.insert(0, product[3] or "")
+                quantity_entry.insert(0, str(product[4]))
+        
+        def save_product():
+            name = name_entry.get().strip()
+            price = price_entry.get().strip()
+            category = category_entry.get().strip()
+            quantity = quantity_entry.get().strip()
+            
+            if not name or not price:
+                messagebox.showwarning("Предупреждение", "Заполните название и цену")
+                return
+            
+            try:
+                price_val = float(price)
+                quantity_val = int(quantity) if quantity else 0
+                
+                if product_id:
+                    self.cursor.execute("UPDATE products SET name=?, price=?, category=?, stock_quantity=? WHERE id=?", 
+                                      (name, price_val, category, quantity_val, product_id))
+                else:
+                    self.cursor.execute("INSERT INTO products (name, price, category, stock_quantity) VALUES (?, ?, ?, ?)", 
+                                      (name, price_val, category, quantity_val))
+                
+                self.conn.commit()
+                self.refresh_data()
+                dialog.destroy()
+                messagebox.showinfo("Успех", "Товар сохранен")
+            except ValueError:
+                messagebox.showerror("Ошибка", "Цена должна быть числом, количество - целым числом")
+            except sqlite3.Error as e:
+                messagebox.showerror("Ошибка", f"Ошибка при сохранении товара: {e}")
+        
+        button_frame = ttk.Frame(main_frame)
+        button_frame.grid(row=4, column=0, columnspan=2, pady=20)
+        
+        ttk.Button(button_frame, text="Сохранить", command=save_product).pack(side=tk.LEFT, padx=(0, 10))
+        ttk.Button(button_frame, text="Отмена", command=dialog.destroy).pack(side=tk.LEFT)
+        
+        main_frame.columnconfigure(1, weight=1)
+
+    def edit_product(self, tree):
+        selection = tree.selection()
+        if not selection:
+            messagebox.showwarning("Предупреждение", "Выберите товар для редактирования")
+            return
+        
+        product_id = tree.item(selection[0])['values'][0]
+        self.product_dialog(product_id)
+
+    def delete_product(self, tree):
+        selection = tree.selection()
+        if not selection:
+            messagebox.showwarning("Предупреждение", "Выберите товар для удаления")
+            return
+        
+        product_id = tree.item(selection[0])['values'][0]
+        product_name = tree.item(selection[0])['values'][1]
+        
+        if messagebox.askyesno("Подтверждение", f"Удалить товар '{product_name}'?"):
+            try:
+                self.cursor.execute("SELECT COUNT(*) FROM order_items WHERE product_id=?", (product_id,))
+                if self.cursor.fetchone()[0] > 0:
+                    messagebox.showerror("Ошибка", "Нельзя удалить товар, который есть в заказах")
+                    return
+                
+                self.cursor.execute("DELETE FROM products WHERE id=?", (product_id,))
+                self.conn.commit()
+                self.refresh_data()
+                self.load_products_table(tree)
+                messagebox.showinfo("Успех", "Товар удален")
+            except sqlite3.Error as e:
+                messagebox.showerror("Ошибка", f"Ошибка при удалении: {e}")
 
     def manage_customers(self):
-        self.manage_entities("Клиенты")
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Управление клиентами")
+        dialog.geometry("700x450")
+        
+        main_frame = ttk.Frame(dialog, padding="10")
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        ttk.Button(button_frame, text="Добавить клиента", 
+                  command=lambda: self.customer_dialog()).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(button_frame, text="Редактировать", 
+                  command=lambda: self.edit_customer(tree)).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(button_frame, text="Удалить", 
+                  command=lambda: self.delete_customer(tree)).pack(side=tk.LEFT, padx=(0, 5))
+        
+        tree_frame = ttk.Frame(main_frame)
+        tree_frame.pack(fill=tk.BOTH, expand=True)
+        
+        columns = ('ID', 'Имя', 'Телефон', 'Адрес')
+        tree = ttk.Treeview(tree_frame, columns=columns, show='headings', height=15)
+        
+        tree.column('ID', width=50)
+        tree.column('Имя', width=150)
+        tree.column('Телефон', width=120)
+        tree.column('Адрес', width=250)
+        
+        for col in columns:
+            tree.heading(col, text=col)
+        
+        scrollbar = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=tree.yview)
+        tree.configure(yscrollcommand=scrollbar.set)
+        
+        tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        self.load_customers_table(tree)
+        
+        ttk.Button(main_frame, text="Закрыть", command=dialog.destroy).pack(pady=(10, 0))
 
-    def manage_entities(self, name):
-        messagebox.showinfo("Управление", f"Открыто управление {name.lower()}")
+    def load_customers_table(self, tree):
+        tree.delete(*tree.get_children())
+        for customer in self.customers:
+            tree.insert('', tk.END, values=customer)
+
+    def customer_dialog(self, customer_id=None):
+        title = "Редактировать клиента" if customer_id else "Добавить клиента"
+        dialog = tk.Toplevel(self.root)
+        dialog.title(title)
+        dialog.geometry("300x200")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        main_frame = ttk.Frame(dialog, padding="10")
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        ttk.Label(main_frame, text="Имя:").grid(row=0, column=0, sticky=tk.W, pady=5)
+        name_entry = ttk.Entry(main_frame)
+        name_entry.grid(row=0, column=1, sticky=(tk.W, tk.E), pady=5)
+        
+        ttk.Label(main_frame, text="Телефон:").grid(row=1, column=0, sticky=tk.W, pady=5)
+        phone_entry = ttk.Entry(main_frame)
+        phone_entry.grid(row=1, column=1, sticky=(tk.W, tk.E), pady=5)
+        
+        ttk.Label(main_frame, text="Адрес:").grid(row=2, column=0, sticky=tk.W, pady=5)
+        address_entry = ttk.Entry(main_frame)
+        address_entry.grid(row=2, column=1, sticky=(tk.W, tk.E), pady=5)
+        
+        if customer_id:
+            customer = next((c for c in self.customers if c[0] == customer_id), None)
+            if customer:
+                name_entry.insert(0, customer[1])
+                phone_entry.insert(0, customer[2])
+                address_entry.insert(0, customer[3])
+        
+        def save_customer():
+            name = name_entry.get().strip()
+            phone = phone_entry.get().strip()
+            address = address_entry.get().strip()
+            
+            if not name:
+                messagebox.showwarning("Предупреждение", "Введите имя клиента")
+                return
+            
+            try:
+                if customer_id:
+                    self.cursor.execute("UPDATE customers SET name=?, phone=?, address=? WHERE id=?", 
+                                      (name, phone, address, customer_id))
+                else:
+                    self.cursor.execute("INSERT INTO customers (name, phone, address) VALUES (?, ?, ?)", 
+                                      (name, phone, address))
+                
+                self.conn.commit()
+                self.refresh_data()
+                dialog.destroy()
+                messagebox.showinfo("Успех", "Клиент сохранен")
+            except sqlite3.Error as e:
+                messagebox.showerror("Ошибка", f"Ошибка при сохранении клиента: {e}")
+        
+        button_frame = ttk.Frame(main_frame)
+        button_frame.grid(row=3, column=0, columnspan=2, pady=20)
+        
+        ttk.Button(button_frame, text="Сохранить", command=save_customer).pack(side=tk.LEFT, padx=(0, 10))
+        ttk.Button(button_frame, text="Отмена", command=dialog.destroy).pack(side=tk.LEFT)
+        
+        main_frame.columnconfigure(1, weight=1)
+
+    def edit_customer(self, tree):
+        selection = tree.selection()
+        if not selection:
+            messagebox.showwarning("Предупреждение", "Выберите клиента для редактирования")
+            return
+        
+        customer_id = tree.item(selection[0])['values'][0]
+        self.customer_dialog(customer_id)
+
+    def delete_customer(self, tree):
+        selection = tree.selection()
+        if not selection:
+            messagebox.showwarning("Предупреждение", "Выберите клиента для удаления")
+            return
+        
+        customer_id = tree.item(selection[0])['values'][0]
+        customer_name = tree.item(selection[0])['values'][1]
+        
+        if messagebox.askyesno("Подтверждение", f"Удалить клиента '{customer_name}'?"):
+            try:
+                self.cursor.execute("SELECT COUNT(*) FROM orders WHERE customer_id=?", (customer_id,))
+                if self.cursor.fetchone()[0] > 0:
+                    messagebox.showerror("Ошибка", "Нельзя удалить клиента с заказами")
+                    return
+                
+                self.cursor.execute("DELETE FROM customers WHERE id=?", (customer_id,))
+                self.conn.commit()
+                self.refresh_data()
+                self.load_customers_table(tree)
+                messagebox.showinfo("Успех", "Клиент удален")
+            except sqlite3.Error as e:
+                messagebox.showerror("Ошибка", f"Ошибка при удалении: {e}")
 
     def __del__(self):
         if hasattr(self, 'conn'):
             self.conn.close()
 
 def main():
-    try:
-        root = tk.Tk()
-        app = OrderManagementSystem(root)
-        root.mainloop()
-    except Exception as e:
-        messagebox.showerror("Критическая ошибка", f"Приложение не может быть запущено: {e}")
+    root = tk.Tk()
+    app = OrderManagementSystem(root)
+    root.mainloop()
 
 if __name__ == "__main__":
     main()
